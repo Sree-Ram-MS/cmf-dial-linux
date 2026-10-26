@@ -379,9 +379,25 @@ class Service:
         self.apps_cache = (time.time(), apps)
         return apps
 
+    def dock_keys_work(self):
+        """True when Super+1..9 opens dock apps on this desktop."""
+        if getattr(self, "_dock_keys", None) is not None and time.time() - self._dock_keys[0] < 60:
+            return self._dock_keys[1]
+        def get(schema, key):
+            try:
+                return subprocess.run(["gsettings", "get", schema, key], capture_output=True,
+                                      text=True, timeout=3).stdout.strip()
+            except (OSError, subprocess.TimeoutExpired):
+                return ""
+        ok = ("<Super>1" in get("org.gnome.shell.keybindings", "switch-to-application-1") or
+              get("org.gnome.shell.extensions.dash-to-dock", "hot-keys") == "true")
+        self._dock_keys = (time.time(), ok)
+        return ok
+
     def app_key(self, entry):
         pos = entry[2]
-        if pos is not None and pos < 9 and self.cfg.get("apps_dock_keys", True):
+        if (pos is not None and pos < 9 and self.cfg.get("apps_dock_keys", True)
+                and self.dock_keys_work()):
             return f"Super+{pos + 1}"
         return ""
 
@@ -414,6 +430,7 @@ class Service:
         key = self.app_key(entry)
         self.log(f"open app {app_id}" + (f" ({key})" if key else ""))
         if key:
+            time.sleep(0.12)  # let the wheel close first
             self.perform("key:" + key.lower())
             return
         for cmd in (["gio", "launch", path], ["gtk-launch", app_id[:-8]]):
@@ -485,7 +502,9 @@ class Service:
         elif g == "mode_press":
             act = mode.get("press", "none")
             self.log(f"{gesture} press -> {mode['name']}: {actions.label(act)}")
-            self.perform(act)
+            res = self.perform(act)
+            if act in actions.TOGGLES and res is not None:
+                self.notify(actions.label(act).replace("on / off", "on" if res else "off"))
         elif g in ("next_mode", "prev_mode"):
             self.mode_idx += 1 if g == "next_mode" else -1
             m = self.mode()
@@ -501,7 +520,7 @@ class Service:
         if not self.performer:
             return
         try:
-            self.performer.run(act)
+            return self.performer.run(act)
         except ValueError as ex:
             self.log(f"bad shortcut '{act}': {ex}")
         except OSError as ex:

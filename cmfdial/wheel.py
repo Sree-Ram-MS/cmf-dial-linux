@@ -59,6 +59,9 @@ DEFAULT_ICONS = {
     "undo": "edit-undo-symbolic",
     "media": "media-playback-start-symbolic",
     "brightness": "display-brightness-symbolic",
+    "capture": "media-record-symbolic",
+    "record": "media-record-symbolic",
+    "workspace": "view-grid-symbolic",
     "windows": "focus-windows-symbolic",
 }
 FALLBACK_ICON = "applications-system-symbolic"
@@ -105,7 +108,6 @@ class Painter:
         self.apps = []          # [{"id", "key", "name", "pixbuf"}]
         self.app_sel = 0
         self.app_pos = 0.0      # animated scroll position of the list
-        self.knob = 0.0         # animated knob rotation
         self.hl = 0.0           # animated highlight angle index
         self.anim = 1.0         # 0..1 fade in
         self.list_anim = 1.0    # 0..1 swing-in of the app list
@@ -127,7 +129,6 @@ class Painter:
             d -= n
         self.sel = new_sel
         self.hl_target = getattr(self, "hl_target", float(self.sel)) + d
-        self.knob_target = getattr(self, "knob_target", 0.0) + d * (2 * math.pi / n)
         had_apps = bool(self.apps)
         self.apps = [self.resolve_app(a) for a in (apps or [])]
         if self.apps and not had_apps:
@@ -139,7 +140,6 @@ class Painter:
 
     def snap(self):
         self.hl = self.hl_target = float(self.sel)
-        self.knob = self.knob_target = getattr(self, "knob_target", 0.0)
         self.app_pos = float(self.app_sel)
         self.anim = self.list_anim = 1.0
 
@@ -148,8 +148,7 @@ class Painter:
         moving = False
         self.anim = min(1.0, self.anim + 0.11)
         self.list_anim = min(1.0, self.list_anim + 0.09)
-        for attr, target in (("hl", self.hl_target), ("knob", self.knob_target),
-                             ("app_pos", float(self.app_sel))):
+        for attr, target in (("hl", self.hl_target), ("app_pos", float(self.app_sel))):
             cur = getattr(self, attr)
             if abs(target - cur) > 0.002:
                 setattr(self, attr, cur + (target - cur) * 0.3)
@@ -251,8 +250,14 @@ class Painter:
         cr.paint_with_alpha(a)
 
     def seg_angle(self, i):
+        # the ring turns like the dial: the highlighted mode always sits on the
+        # right, next to where the app list opens
         n = max(1, len(self.modes))
-        return -math.pi / 2 + 2 * math.pi * i / n
+        return 2 * math.pi * (i - self.hl) / n
+
+    @property
+    def knob(self):
+        return -2 * math.pi * self.hl / max(1, len(self.modes))
 
     def draw_wheel(self, cr):
         n = max(1, len(self.modes))
@@ -398,10 +403,7 @@ class Painter:
         n = len(self.apps)
         # connector from the highlighted segment to the selected card
         mid = self.seg_angle(self.sel)
-        if math.cos(mid) > 0.15:
-            sx, sy = CX + (R_OUT + POP) * math.cos(mid), CY + (R_OUT + POP) * math.sin(mid)
-        else:
-            sx, sy = CX + R_OUT + 6, CY
+        sx, sy = CX + (R_OUT + POP) * math.cos(mid), CY + (R_OUT + POP) * math.sin(mid)
         ex, ey = LIST_X - 4, CY
         cr.set_line_width(1.6)
         cr.set_source_rgba(0.35, 0.36, 0.39, 0.9 * la)

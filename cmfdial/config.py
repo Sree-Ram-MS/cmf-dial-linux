@@ -28,7 +28,7 @@ DEFAULT = {
     "device_hint": "CMF",        # part of the buds' Bluetooth name
     "scroll_step": 3,
     "start_mode": 0,
-    "config_version": 3,
+    "config_version": 4,
     "menu_timeout": 5,           # seconds before the wheel picks the highlighted mode
     # Apps mode: empty list = the apps pinned in the Ubuntu dock, in dock order
     "apps": [],
@@ -46,6 +46,12 @@ DEFAULT = {
         {"name": "Slides", "enabled": True, "turn_up": "page_down", "turn_down": "page_up", "press": "key:b"},
         {"name": "Tabs", "enabled": True, "turn_up": "next_tab", "turn_down": "prev_tab", "press": "key:ctrl+w"},
         APPS_MODE,
+        {"name": "Brightness", "enabled": True, "icon": "display-brightness-symbolic",
+         "turn_up": "brightness_up", "turn_down": "brightness_down", "press": "night_light"},
+        {"name": "Capture", "enabled": True, "icon": "media-record-symbolic",
+         "turn_up": "none", "turn_down": "none", "press": "screen_record"},
+        {"name": "Workspaces", "enabled": False, "icon": "view-grid-symbolic",
+         "turn_up": "next_workspace", "turn_down": "prev_workspace", "press": "overview"},
         {"name": "Arrows", "enabled": False, "turn_up": "arrow_right", "turn_down": "arrow_left", "press": "key:space"},
         {"name": "Zoom", "enabled": False, "turn_up": "zoom_in", "turn_down": "zoom_out", "press": "key:ctrl+0"},
         {"name": "Undo / Redo", "enabled": False, "turn_up": "redo", "turn_down": "undo", "press": "none"},
@@ -80,6 +86,14 @@ def load():
             # 2.2 adds the Apps mode, placed after Tabs
             pos = next((i + 1 for i, m in enumerate(cfg["modes"]) if m.get("name") == "Tabs"), len(cfg["modes"]))
             cfg["modes"].insert(pos, copy.deepcopy(APPS_MODE))
+        if old_version < 4 and data.get("modes"):
+            # 2.3 adds Brightness, Capture and Workspaces modes (after Apps)
+            names = {m.get("name") for m in cfg["modes"]}
+            pos = next((i + 1 for i, m in enumerate(cfg["modes"]) if m.get("kind") == "apps"), len(cfg["modes"]))
+            for m in DEFAULT["modes"]:
+                if m["name"] in ("Brightness", "Capture", "Workspaces") and m["name"] not in names:
+                    cfg["modes"].insert(pos, copy.deepcopy(m))
+                    pos += 1
         cfg["config_version"] = DEFAULT["config_version"]
         try:
             save(cfg)

@@ -22,7 +22,8 @@ ICONS = [
     ("Windows", "focus-windows-symbolic"), ("Camera", "camera-photo-symbolic"),
     ("Screen", "video-display-symbolic"), ("Keyboard", "input-keyboard-symbolic"),
     ("Terminal", "utilities-terminal-symbolic"), ("Star", "starred-symbolic"),
-    ("Apps", "view-app-grid-symbolic"),
+    ("Apps", "view-app-grid-symbolic"), ("Record", "media-record-symbolic"),
+    ("Workspaces", "view-grid-symbolic"), ("Night Light", "night-light-symbolic"),
 ]
 TURN_ACTIONS = [k for k in actions.ACTIONS]
 PRESS_ACTIONS = list(actions.GLOBAL_ACTIONS) + [k for k in actions.ACTIONS if k != "system_volume"]

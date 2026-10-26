@@ -1,6 +1,7 @@
 """Actions a gesture can trigger, and how they are performed (virtual keyboard/mouse via uinput)."""
 import shlex
 import subprocess
+import time
 
 # id -> label shown in the settings app
 ACTIONS = {
@@ -28,6 +29,30 @@ ACTIONS = {
     "undo": "Undo",
     "redo": "Redo",
     "screenshot": "Screenshot",
+    "brightness_up": "Brightness up",
+    "brightness_down": "Brightness down",
+    "kbd_light_up": "Keyboard light up",
+    "kbd_light_down": "Keyboard light down",
+    "night_light": "Night Light on / off",
+    "screen_record": "Start / stop screen recording",
+    "screenshot_window": "Screenshot of the window",
+    "screenshot_screen": "Screenshot of the whole screen",
+    "mic_mute": "Microphone mute",
+    "dnd": "Do Not Disturb on / off",
+    "lock_screen": "Lock screen",
+    "overview": "Activities overview",
+    "show_apps": "Show all apps",
+    "show_desktop": "Show desktop",
+    "next_workspace": "Next workspace",
+    "prev_workspace": "Previous workspace",
+    "switch_app_back": "Switch app backwards",
+    "switch_window": "Switch window of the same app",
+    "minimize": "Minimise window",
+    "maximize": "Maximise / restore window",
+    "close_window": "Close window",
+    "new_tab": "New tab",
+    "reopen_tab": "Reopen closed tab",
+    "stop_media": "Stop media",
     "key:": "Custom shortcut...",
     "cmd:": "Run command...",
 }
@@ -47,6 +72,20 @@ KEY_COMBOS = {
     "next_tab": "ctrl+tab", "prev_tab": "ctrl+shift+tab", "switch_app": "alt+tab",
     "zoom_in": "ctrl+equal", "zoom_out": "ctrl+minus",
     "undo": "ctrl+z", "redo": "ctrl+shift+z", "screenshot": "sysrq",
+    "brightness_up": "brightnessup", "brightness_down": "brightnessdown",
+    "kbd_light_up": "kbdillumup", "kbd_light_down": "kbdillumdown",
+    "screen_record": "ctrl+shift+alt+r", "screenshot_window": "alt+sysrq", "screenshot_screen": "shift+sysrq",
+    "mic_mute": "micmute", "lock_screen": "super+l", "overview": "super", "show_apps": "super+a",
+    "show_desktop": "super+d", "next_workspace": "super+pagedown", "prev_workspace": "super+pageup",
+    "switch_app_back": "alt+shift+tab", "switch_window": "alt+grave", "minimize": "super+h",
+    "maximize": "alt+f10", "close_window": "alt+f4", "new_tab": "ctrl+t", "reopen_tab": "ctrl+shift+t",
+    "stop_media": "stopcd",
+}
+
+# on / off switches done through GNOME settings: (schema, key, True when the key means "on")
+TOGGLES = {
+    "night_light": ("org.gnome.settings-daemon.plugins.color", "night-light-enabled", True),
+    "dnd": ("org.gnome.desktop.notifications", "show-banners", False),
 }
 
 ALIASES = {
@@ -100,13 +139,30 @@ class Performer:
             pass
 
     def combo(self, codes):
+        # one key per frame with a short pause: GNOME Shell shortcuts (Super+1,
+        # Ctrl+Shift+Alt+R...) are missed when the whole chord lands at once
         e = self.e
         for c in codes:
             self.ui.write(e.EV_KEY, c, 1)
-        self.ui.syn()
+            self.ui.syn()
+            time.sleep(0.012)
+        time.sleep(0.03)
         for c in reversed(codes):
             self.ui.write(e.EV_KEY, c, 0)
-        self.ui.syn()
+            self.ui.syn()
+            time.sleep(0.008)
+
+    @staticmethod
+    def toggle(action):
+        schema, key, on_means_true = TOGGLES[action]
+        try:
+            cur = subprocess.run(["gsettings", "get", schema, key], capture_output=True,
+                                 text=True, timeout=3).stdout.strip() == "true"
+            subprocess.run(["gsettings", "set", schema, key, "false" if cur else "true"], timeout=3)
+            now_true = not cur
+            return now_true if on_means_true else not now_true
+        except (OSError, subprocess.TimeoutExpired):
+            return None
 
     def run(self, action):
         e = self.e
@@ -116,6 +172,8 @@ class Performer:
             self.ui.write(e.EV_REL, e.REL_WHEEL, self.scroll_step if action == "scroll_up" else -self.scroll_step)
             self.ui.syn()
             return
+        if action in TOGGLES:
+            return self.toggle(action)
         if action.startswith("cmd:"):
             cmd = action[4:].strip()
             if cmd:

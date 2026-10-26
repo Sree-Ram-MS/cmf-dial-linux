@@ -39,7 +39,11 @@ Double press and a wheel of your modes appears in the middle of the screen. Turn
 
 ### Apps mode
 
-Pick **Apps** on the wheel and a fanned list of your dock apps swings out beside it. Turn the dial to move through them and single press to open the highlighted one. Apps pinned in the Ubuntu dock open with Super+1 to 9, so an app that's already running comes to the front instead of opening twice. Double press closes the list. You can list your own apps (desktop file names, such as `firefox_firefox.desktop`) in the Modes tab instead of using the dock.
+Pick **Apps** on the wheel and a fanned list of your dock apps swings out beside it. Turn the dial to move through them and single press to open the highlighted one. Apps pinned in the Ubuntu dock open with Super+1 to 9, so an app that's already running comes to the front instead of opening twice. Double press closes the list. You can list your own apps (desktop file names, such as `firefox_firefox.desktop`) in the Modes tab instead of using the dock. If Super+1 to 9 is switched off on your desktop, apps are launched directly instead.
+
+### Brightness, Capture and more
+
+**Brightness** turns screen brightness up and down, and a press switches Night Light. **Capture** starts and stops GNOME's screen recording with a press (Ctrl+Shift+Alt+R). A **Workspaces** mode is there too, off by default. Any mode or press can also run: screenshots, microphone mute, Do Not Disturb, lock screen, overview, show desktop, keyboard light, minimise, maximise, close window, new tab, reopen tab, or any shortcut or command.
 
 You can change all of this in the app: turn modes on or off, rename them, reorder them, add your own, and set any action, including a custom shortcut (`ctrl+shift+t`, `super+d`) or a command (`gnome-calculator`).
 
