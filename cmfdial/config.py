@@ -25,10 +25,12 @@ DEFAULT = {
     "device_hint": "CMF",        # part of the buds' Bluetooth name
     "scroll_step": 3,
     "start_mode": 0,
+    "config_version": 2,
+    "menu_timeout": 5,           # seconds before the wheel picks the highlighted mode
     # What the presses do in every mode. "mode_press" runs the current mode's press action.
     "global": {
         "single": "mode_press",
-        "double": "next_mode",
+        "double": "open_menu",
         "triple": "prev_mode",
     },
     "modes": [
@@ -60,7 +62,16 @@ def load():
             data = json.load(f)
     except (OSError, ValueError):
         data = {}
+    old_version = data.get("config_version", 1) if data else 2
     cfg = _merge(DEFAULT, data)
+    if old_version < 2:
+        # 2.1 adds the wheel menu: double press opens it
+        cfg["global"]["double"] = "open_menu"
+        cfg["config_version"] = 2
+        try:
+            save(cfg)
+        except OSError:
+            pass
     if not cfg.get("modes"):
         cfg["modes"] = copy.deepcopy(DEFAULT["modes"])
     return cfg

@@ -14,6 +14,15 @@ from . import __version__, actions, config  # noqa: E402
 
 APP_ID = "io.github.sreerammsofficial.CmfDial"
 
+ICONS = [
+    ("Automatic", ""), ("Mouse / scroll", "input-mouse-symbolic"), ("Volume", "audio-volume-high-symbolic"),
+    ("Slides", "x-office-presentation-symbolic"), ("Tabs", "view-dual-symbolic"),
+    ("Arrows", "media-seek-forward-symbolic"), ("Zoom", "zoom-in-symbolic"), ("Undo", "edit-undo-symbolic"),
+    ("Media", "media-playback-start-symbolic"), ("Brightness", "display-brightness-symbolic"),
+    ("Windows", "focus-windows-symbolic"), ("Camera", "camera-photo-symbolic"),
+    ("Screen", "video-display-symbolic"), ("Keyboard", "input-keyboard-symbolic"),
+    ("Terminal", "utilities-terminal-symbolic"), ("Star", "starred-symbolic"),
+]
 TURN_ACTIONS = [k for k in actions.ACTIONS]
 PRESS_ACTIONS = list(actions.GLOBAL_ACTIONS) + [k for k in actions.ACTIONS if k != "system_volume"]
 MODE_PRESS_ACTIONS = [k for k in actions.ACTIONS if k != "system_volume"]
@@ -171,6 +180,16 @@ class Window(Adw.ApplicationWindow):
         step.set_value(int(self.cfg.get("scroll_step", 3)))
         step.connect("notify::value", lambda r, *_: self.set("scroll_step", int(r.get_value())))
         g.add(step)
+        mt = Adw.SpinRow.new_with_range(2, 15, 1)
+        mt.set_title("Wheel picks the highlighted mode after (seconds)")
+        mt.set_value(int(self.cfg.get("menu_timeout", 5)))
+        mt.connect("notify::value", lambda r, *_: self.set("menu_timeout", int(r.get_value())))
+        g.add(mt)
+        pv = Adw.ActionRow(title="Preview the wheel menu", subtitle="Shows it for 3 seconds")
+        pvb = Gtk.Button(label="Show", valign=Gtk.Align.CENTER)
+        pvb.connect("clicked", self.on_preview)
+        pv.add_suffix(pvb)
+        g.add(pv)
         no = Adw.SwitchRow(title="Show mode pop-ups")
         no.set_active(self.cfg.get("notifications", True))
         no.connect("notify::active", lambda r, *_: self.set("notifications", r.get_active()))
@@ -216,6 +235,12 @@ class Window(Adw.ApplicationWindow):
         name.connect("apply", lambda r: (self.set_mode(i, "name", r.get_text().strip() or f"Mode {i + 1}"),
                                          row.set_title(r.get_text().strip() or f"Mode {i + 1}")))
         row.add_row(name)
+        icon = Adw.ComboRow(title="Wheel icon")
+        icon.set_model(Gtk.StringList.new([lbl for lbl, _ in ICONS]))
+        cur = m.get("icon") or ""
+        icon.set_selected(next((k for k, (_, n) in enumerate(ICONS) if n == cur), 0))
+        icon.connect("notify::selected", lambda r, *_: self.set_mode(i, "icon", ICONS[r.get_selected()][1]))
+        row.add_row(icon)
         for key, title, choices in (("turn_up", "Turn clockwise", TURN_ACTIONS),
                                     ("turn_down", "Turn anticlockwise", TURN_ACTIONS),
                                     ("press", "Press (single press)", MODE_PRESS_ACTIONS)):
@@ -245,7 +270,8 @@ class Window(Adw.ApplicationWindow):
                       margin_top=18, margin_bottom=18, margin_start=18, margin_end=18)
         lbl = Gtk.Label(wrap=True, xalign=0,
                         label="Play some audio through the buds, then turn and press the dial. "
-                              "Every signal the buds send shows up here.")
+                              "Every signal the buds send shows up here. Tip: pause audio on your "
+                              "phone, since the dial talks to whichever device is playing.")
         lbl.add_css_class("dim-label")
         box.append(lbl)
         self.last_label = Gtk.Label(xalign=0, label="Last heard: nothing yet")
@@ -330,6 +356,29 @@ class Window(Adw.ApplicationWindow):
         except OSError as ex:
             self.toast.add_toast(Adw.Toast(title=f"Could not save: {ex}"))
         return False
+
+    def on_preview(self, *_):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        env = {**os.environ, "GDK_BACKEND": "x11", "PYTHONPATH": root}
+        try:
+            p = subprocess.Popen([sys.executable, "-m", "cmfdial.wheel"], stdin=subprocess.PIPE,
+                                 cwd=root, env=env, text=True)
+        except OSError as ex:
+            self.toast.add_toast(Adw.Toast(title=f"Could not show the wheel: {ex}"))
+            return
+        modes = [{"name": m.get("name", ""), "icon": m.get("icon")}
+                 for m in self.cfg["modes"] if m.get("enabled", True)]
+        p.stdin.write(json.dumps({"cmd": "show", "modes": modes, "sel": 0}) + "\n")
+        p.stdin.flush()
+
+        def stop():
+            try:
+                p.stdin.write('{"cmd": "quit"}\n')
+                p.stdin.flush()
+            except (OSError, ValueError):
+                pass
+            return False
+        GLib.timeout_add(3000, stop)
 
     # ---------- service ----------
     def restart_service(self):

@@ -33,6 +33,7 @@ ACTIONS = {
 }
 
 GLOBAL_ACTIONS = {
+    "open_menu": "Open the wheel menu",
     "mode_press": "Current mode's press action",
     "next_mode": "Next mode",
     "prev_mode": "Previous mode",

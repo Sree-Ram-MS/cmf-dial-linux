@@ -9,7 +9,7 @@ Inspired by [Orbit by Yemcube](https://github.com/harsha20599/orbit), which does
 Download `cmf-dial_<version>_all.deb` from [Releases](https://github.com/Sree-Ram-MS/cmf-dial-linux/releases), then:
 
 ```bash
-sudo apt install ./cmf-dial_2.0.0_all.deb
+sudo apt install ./cmf-dial_2.1.0_all.deb
 ```
 
 Reboot once after the first install so the permissions take effect. CMF Dial then starts on its own at every login.
@@ -30,8 +30,12 @@ Reboot once after the first install so the permissions take effect. CMF Dial the
 |---|---|
 | Turn the dial | Drives the current mode (scroll, volume, slides, tabs…) |
 | Single press | The current mode's press action (play/pause, black out slides, close tab…) |
-| Double press | Next mode (a pop-up shows its name) |
+| Double press | Opens the **wheel menu** |
 | Triple press | Previous mode |
+
+### The wheel menu
+
+Double press and a wheel of your modes appears in the middle of the screen. Turn the dial to move the highlight, and single press to pick it. Double or triple press closes the wheel without changing anything. If you leave it, it picks the highlighted mode after 5 seconds (you can change this). Each mode's icon can be changed in the app.
 
 You can change all of this in the app: turn modes on or off, rename them, reorder them, add your own, and set any action, including a custom shortcut (`ctrl+shift+t`, `super+d`) or a command (`gnome-calculator`).
 

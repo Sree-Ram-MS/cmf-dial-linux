@@ -8,6 +8,7 @@ How the buds reach Linux (BlueZ + PipeWire):
     device. Both are handled.
 """
 import fcntl
+import glob
 import json
 import os
 import re
@@ -50,6 +51,11 @@ class Service:
         self.last_key_turn = 0.0
         self.status = {}
         self.last_scan = 0.0
+        self.wheel = None
+        self.wheel_failed = 0.0
+        self.menu_open = False
+        self.menu_sel = 0
+        self.menu_deadline = 0.0
         os.makedirs(config.STATE_DIR, exist_ok=True)
 
     # ---------- output ----------
@@ -235,8 +241,91 @@ class Service:
             self.set_status(state="waiting", ready=False, device=None, sink=None,
                             mode=self.mode()["name"], error=err)
 
+    # ---------- wheel menu ----------
+    def wheel_env(self):
+        env = dict(os.environ, GDK_BACKEND="x11", NO_AT_BRIDGE="1")
+        if not env.get("DISPLAY"):
+            env["DISPLAY"] = ":0"
+        if not env.get("XAUTHORITY"):
+            run = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+            auth = sorted(glob.glob(os.path.join(run, ".mutter-Xwaylandauth.*")))
+            if auth:
+                env["XAUTHORITY"] = auth[-1]
+        pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        env["PYTHONPATH"] = pkg_root + (":" + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+        return env, pkg_root
+
+    def wheel_send(self, msg):
+        if self.wheel is None or self.wheel.poll() is not None:
+            if time.time() - self.wheel_failed < 10:
+                return False
+            env, root = self.wheel_env()
+            try:
+                self.wheel = subprocess.Popen([sys.executable, "-m", "cmfdial.wheel"], stdin=subprocess.PIPE,
+                                              cwd=root, env=env, stdout=subprocess.DEVNULL,
+                                              stderr=open(os.path.join(config.STATE_DIR, "wheel.log"), "w"),
+                                              text=True, bufsize=1)
+            except OSError as ex:
+                self.log(f"wheel menu cannot start: {ex}")
+                self.wheel, self.wheel_failed = None, time.time()
+                return False
+        try:
+            self.wheel.stdin.write(json.dumps(msg) + "\n")
+            self.wheel.stdin.flush()
+            return True
+        except (OSError, ValueError):
+            self.wheel, self.wheel_failed = None, time.time()
+            return False
+
+    def show_menu(self):
+        modes = [{"name": m.get("name", ""), "icon": m.get("icon")} for m in self.modes()]
+        ok = self.wheel_send({"cmd": "show", "modes": modes, "sel": self.menu_sel})
+        if not ok:
+            # no wheel possible (no display): behave like "next mode"
+            self.menu_open = False
+            self.mode_idx += 1
+            self.notify(self.mode()["name"])
+            self.set_status(mode=self.mode()["name"])
+
+    def open_menu(self):
+        self.menu_open = True
+        self.menu_sel = self.mode_idx % len(self.modes())
+        self.menu_deadline = time.time() + float(self.cfg.get("menu_timeout", 5))
+        self.log("wheel menu opened")
+        self.show_menu()
+
+    def close_menu(self, select=True):
+        if not self.menu_open:
+            return
+        self.menu_open = False
+        self.wheel_send({"cmd": "hide"})
+        if select:
+            self.mode_idx = self.menu_sel
+            self.base_vol = self.get_vol()
+            name = self.mode()["name"]
+            self.log(f"wheel menu: picked {name}")
+            self.set_status(mode=name)
+        else:
+            self.log("wheel menu closed")
+
+    def menu_gesture(self, gesture, source):
+        n = len(self.modes())
+        if gesture in ("turn_up", "turn_down"):
+            if source == "volume" and self.base_vol is not None:
+                self.set_vol(f"{self.base_vol}%")
+            self.menu_sel = (self.menu_sel + (1 if gesture == "turn_up" else -1)) % n
+            self.menu_deadline = time.time() + float(self.cfg.get("menu_timeout", 5))
+            self.show_menu()
+        elif gesture == "single":
+            self.close_menu(select=True)
+        else:  # double / triple press closes without changing mode
+            self.close_menu(select=False)
+
     # ---------- gestures ----------
     def handle(self, gesture, source):
+        if self.menu_open:
+            self.menu_gesture(gesture, source)
+            return
         mode = self.mode()
         if gesture in ("turn_up", "turn_down"):
             act = mode.get(gesture, "none")
@@ -254,7 +343,9 @@ class Service:
             self.set_status(last=f"{gesture} via {source}")
             return
         g = self.cfg.get("global", {}).get(gesture, "none")
-        if g == "mode_press":
+        if g == "open_menu":
+            self.open_menu()
+        elif g == "mode_press":
             act = mode.get("press", "none")
             self.log(f"{gesture} press -> {mode['name']}: {actions.label(act)}")
             self.perform(act)
@@ -377,8 +468,10 @@ class Service:
             sub_fd = self.sub.stdout.fileno() if self.sub else None
             if sub_fd is not None:
                 fds.append(sub_fd)
+            if self.menu_open and time.time() > self.menu_deadline:
+                self.close_menu(select=True)
             try:
-                r, _, _ = select.select(fds, [], [], 1.0)
+                r, _, _ = select.select(fds, [], [], 0.2 if self.menu_open else 1.0)
             except (OSError, ValueError):
                 self.drop_devices()
                 continue
@@ -401,6 +494,7 @@ def main():
     svc = Service(foreground=foreground)
 
     def stop(*_):
+        svc.wheel_send({"cmd": "quit"}) if svc.wheel else None
         svc.drop_devices()
         if svc.performer:
             svc.performer.close()
