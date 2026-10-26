@@ -1,0 +1,6 @@
+#!/usr/bin/python3
+"""CMF Dial background service. Run with --foreground to see the log in the terminal."""
+import sys
+sys.path.insert(0, "/usr/lib/cmf-dial")
+from cmfdial.daemon import main
+main()

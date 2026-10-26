@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+# clean up version 1.x
+rm -f /etc/xdg/autostart/cmf-dial.desktop /usr/share/applications/cmf-dial.desktop
+pkill -f '/usr/lib/cmf-dial/cmf_dial.py' 2>/dev/null || true
+pkill -f '^/bin/sh /usr/bin/cmf-dial' 2>/dev/null || true
+
+modprobe uinput 2>/dev/null || true
+udevadm control --reload 2>/dev/null || true
+udevadm trigger --subsystem-match=misc --subsystem-match=input 2>/dev/null || true
+
+systemctl --global enable cmf-dial.service >/dev/null 2>&1 || true
+
+U="${SUDO_USER:-$(logname 2>/dev/null || true)}"
+if [ -n "$U" ] && [ "$U" != "root" ]; then
+  usermod -aG input "$U" 2>/dev/null || true
+  systemctl --user -M "$U@" daemon-reload >/dev/null 2>&1 || true
+  systemctl --user -M "$U@" restart cmf-dial.service >/dev/null 2>&1 || true
+fi
+echo "CMF Dial installed. Open 'CMF Dial' from your apps to set it up."
+exit 0

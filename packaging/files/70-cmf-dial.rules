@@ -1,0 +1,4 @@
+# CMF Dial: let the signed-in user create the virtual keyboard (uinput)
+# and read the buds' AVRCP button device, with no re-login needed.
+KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="input", MODE="0660", TAG+="uaccess", OPTIONS+="static_node=uinput"
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="*(AVRCP)", GROUP="input", MODE="0660", TAG+="uaccess"

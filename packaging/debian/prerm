@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+  systemctl --global disable cmf-dial.service >/dev/null 2>&1 || true
+  pkill -f '/usr/bin/cmf-dial$' 2>/dev/null || true
+  pkill -f 'cmfdial.daemon' 2>/dev/null || true
+fi
+exit 0

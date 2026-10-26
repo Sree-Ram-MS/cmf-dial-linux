@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=CMF Dial
+GenericName=Earbuds Dial Controller
+Comment=Choose what the CMF Buds Pro 2 dial does on your computer
+Exec=cmf-dial-settings
+Icon=audio-headphones
+Terminal=false
+Categories=Settings;HardwareSettings;Utility;
+Keywords=cmf;nothing;buds;earbuds;dial;bluetooth;orbit;
+StartupNotify=true

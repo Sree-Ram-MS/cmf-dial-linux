@@ -1,0 +1,12 @@
+[Unit]
+Description=CMF Dial - control Ubuntu with the CMF Buds Pro 2 case dial
+After=graphical-session.target pipewire-pulse.service
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/cmf-dial
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target

@@ -1,0 +1,13 @@
+Package: cmf-dial
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: all
+Depends: python3, python3-evdev, python3-gi, gir1.2-gtk-4.0, gir1.2-adw-1, pulseaudio-utils, libnotify-bin, coreutils
+Maintainer: Sree Ram M S <sreerammsofficial@gmail.com>
+Homepage: https://github.com/Sree-Ram-MS/cmf-dial-linux
+Description: Control Ubuntu with the CMF Buds Pro 2 case dial
+ Turn the CMF Buds Pro 2 dial to scroll, change volume, flip slides,
+ switch tabs and more. Presses switch modes or run any shortcut or command.
+ Includes a settings app with a live tester.
+ Inspired by Orbit by Yemcube (https://github.com/harsha20599/orbit).
