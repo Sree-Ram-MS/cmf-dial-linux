@@ -7,6 +7,7 @@ How the buds reach Linux (BlueZ + PipeWire):
     changes) or, on some setups, as volume-up / volume-down keys on that same
     device. Both are handled.
 """
+import ast
 import fcntl
 import glob
 import json
@@ -56,6 +57,11 @@ class Service:
         self.menu_open = False
         self.menu_sel = 0
         self.menu_deadline = 0.0
+        self.apps_open = False
+        self.apps_sel = 0
+        self.apps_list = []        # [(desktop id, path, dock position or None)]
+        self.apps_deadline = 0.0
+        self.apps_cache = (0.0, [])
         os.makedirs(config.STATE_DIR, exist_ok=True)
 
     # ---------- output ----------
@@ -278,8 +284,8 @@ class Service:
             return False
 
     def show_menu(self):
-        modes = [{"name": m.get("name", ""), "icon": m.get("icon")} for m in self.modes()]
-        ok = self.wheel_send({"cmd": "show", "modes": modes, "sel": self.menu_sel})
+        ok = self.wheel_send({"cmd": "show", "modes": self.wheel_modes(), "sel": self.menu_sel,
+                              "hint": "turn to choose \u00b7 press to select"})
         if not ok:
             # no wheel possible (no display): behave like "next mode"
             self.menu_open = False
@@ -287,7 +293,11 @@ class Service:
             self.notify(self.mode()["name"])
             self.set_status(mode=self.mode()["name"])
 
+    def wheel_modes(self):
+        return [{"name": m.get("name", ""), "icon": m.get("icon"), "kind": m.get("kind")} for m in self.modes()]
+
     def open_menu(self):
+        self.close_apps(launch=False)
         self.menu_open = True
         self.menu_sel = self.mode_idx % len(self.modes())
         self.menu_deadline = time.time() + float(self.cfg.get("menu_timeout", 5))
@@ -305,6 +315,8 @@ class Service:
             name = self.mode()["name"]
             self.log(f"wheel menu: picked {name}")
             self.set_status(mode=name)
+            if self.mode().get("kind") == "apps":
+                self.open_apps()  # show the app list straight away
         else:
             self.log("wheel menu closed")
 
@@ -321,12 +333,137 @@ class Service:
         else:  # double / triple press closes without changing mode
             self.close_menu(select=False)
 
+    # ---------- apps mode ----------
+    APP_DIRS = [
+        os.path.expanduser("~/.local/share/applications"),
+        os.path.expanduser("~/.local/share/flatpak/exports/share/applications"),
+        "/var/lib/flatpak/exports/share/applications",
+        "/var/lib/snapd/desktop/applications",
+        "/usr/local/share/applications",
+        "/usr/share/applications",
+    ]
+
+    def desktop_path(self, app_id):
+        if not app_id.endswith(".desktop"):
+            app_id += ".desktop"
+        for d in self.APP_DIRS:
+            p = os.path.join(d, app_id)
+            if os.path.isfile(p):
+                return app_id, p
+        return app_id, None
+
+    def dock_favorites(self):
+        try:
+            out = subprocess.run(["gsettings", "get", "org.gnome.shell", "favorite-apps"],
+                                 capture_output=True, text=True, timeout=3).stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            return []
+        if out.startswith("@as"):
+            out = out[3:].strip()
+        try:
+            return [x for x in ast.literal_eval(out) if isinstance(x, str)]
+        except (ValueError, SyntaxError):
+            return []
+
+    def load_apps(self):
+        """[(desktop id, path, dock position or None)] for the Apps mode."""
+        if time.time() - self.apps_cache[0] < 10 and self.apps_cache[1]:
+            return self.apps_cache[1]
+        custom = [a for a in self.cfg.get("apps") or [] if a]
+        ids = custom or self.dock_favorites()
+        apps = []
+        for pos, app in enumerate(ids):
+            app_id, path = self.desktop_path(app)
+            if path:
+                apps.append((app_id, path, None if custom else pos))
+        self.apps_cache = (time.time(), apps)
+        return apps
+
+    def app_key(self, entry):
+        pos = entry[2]
+        if pos is not None and pos < 9 and self.cfg.get("apps_dock_keys", True):
+            return f"Super+{pos + 1}"
+        return ""
+
+    def show_apps(self):
+        apps = [{"id": a[0], "key": self.app_key(a)} for a in self.apps_list]
+        self.wheel_send({"cmd": "show", "modes": self.wheel_modes(), "sel": self.mode_idx,
+                         "apps": apps, "app_sel": self.apps_sel, "title": "Apps"})
+
+    def open_apps(self):
+        self.apps_list = self.load_apps()
+        if not self.apps_list:
+            self.notify("No apps found. Pin apps to the dock, or list them in Settings.")
+            return
+        self.apps_open = True
+        self.apps_sel %= len(self.apps_list)
+        self.apps_deadline = time.time() + float(self.cfg.get("menu_timeout", 5))
+        self.log("app list opened")
+        self.show_apps()
+
+    def close_apps(self, launch):
+        if not self.apps_open:
+            return
+        self.apps_open = False
+        self.wheel_send({"cmd": "hide"})
+        if launch and self.apps_list:
+            self.launch_app(self.apps_list[self.apps_sel % len(self.apps_list)])
+
+    def launch_app(self, entry):
+        app_id, path, _ = entry
+        key = self.app_key(entry)
+        self.log(f"open app {app_id}" + (f" ({key})" if key else ""))
+        if key:
+            self.perform("key:" + key.lower())
+            return
+        for cmd in (["gio", "launch", path], ["gtk-launch", app_id[:-8]]):
+            if shutil.which(cmd[0]):
+                try:
+                    subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL)
+                    return
+                except OSError:
+                    continue
+        self.log(f"cannot open {app_id}: gio and gtk-launch are missing")
+
+    def apps_gesture(self, gesture, source):
+        """Gestures in the Apps mode. Returns True when handled here."""
+        if gesture in ("turn_up", "turn_down"):
+            if source == "volume" and self.base_vol is not None:
+                self.set_vol(f"{self.base_vol}%")
+            if not self.apps_open:
+                self.open_apps()
+            else:
+                self.apps_sel = (self.apps_sel + (1 if gesture == "turn_up" else -1)) % len(self.apps_list)
+                self.apps_deadline = time.time() + float(self.cfg.get("menu_timeout", 5))
+                self.show_apps()
+            return True
+        g = self.cfg.get("global", {}).get(gesture, "none")
+        if self.apps_open:
+            if g == "mode_press":
+                self.close_apps(launch=True)
+                return True
+            if g == "open_menu":
+                return False  # the wheel menu takes over
+            self.close_apps(launch=False)
+            return gesture == "double"
+        if g == "mode_press":
+            self.open_apps()
+            return True
+        return False
+
     # ---------- gestures ----------
     def handle(self, gesture, source):
         if self.menu_open:
             self.menu_gesture(gesture, source)
             return
         mode = self.mode()
+        if mode.get("kind") == "apps":
+            if self.apps_gesture(gesture, source):
+                self.set_status(last=f"{gesture} via {source}")
+                return
+        elif self.apps_open:
+            self.close_apps(launch=False)
         if gesture in ("turn_up", "turn_down"):
             act = mode.get(gesture, "none")
             self.log(f"{gesture.replace('_', ' ')} ({source}) -> {mode['name']}: {actions.label(act)}")
@@ -470,8 +607,11 @@ class Service:
                 fds.append(sub_fd)
             if self.menu_open and time.time() > self.menu_deadline:
                 self.close_menu(select=True)
+            if self.apps_open and time.time() > self.apps_deadline:
+                self.close_apps(launch=bool(self.cfg.get("apps_autopick", False)))
+            busy = self.menu_open or self.apps_open
             try:
-                r, _, _ = select.select(fds, [], [], 0.2 if self.menu_open else 1.0)
+                r, _, _ = select.select(fds, [], [], 0.2 if busy else 1.0)
             except (OSError, ValueError):
                 self.drop_devices()
                 continue

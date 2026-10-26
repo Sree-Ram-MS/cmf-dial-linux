@@ -9,6 +9,9 @@ STATE_DIR = os.path.join(os.environ.get("XDG_RUNTIME_DIR", os.path.expanduser("~
 EVENTS_PATH = os.path.join(STATE_DIR, "events.log")
 STATUS_PATH = os.path.join(STATE_DIR, "status.json")
 
+APPS_MODE = {"name": "Apps", "enabled": True, "kind": "apps", "icon": "view-app-grid-symbolic",
+             "turn_up": "none", "turn_down": "none", "press": "none"}
+
 # Gestures the buds can send. Each maps to a raw AVRCP signal.
 GESTURES = [
     ("turn_up", "Turn dial clockwise"),
@@ -25,8 +28,12 @@ DEFAULT = {
     "device_hint": "CMF",        # part of the buds' Bluetooth name
     "scroll_step": 3,
     "start_mode": 0,
-    "config_version": 2,
+    "config_version": 3,
     "menu_timeout": 5,           # seconds before the wheel picks the highlighted mode
+    # Apps mode: empty list = the apps pinned in the Ubuntu dock, in dock order
+    "apps": [],
+    "apps_dock_keys": True,      # open dock apps with Super+1..9 (focuses the app if it's already open)
+    "apps_autopick": False,      # open the highlighted app when the list times out
     # What the presses do in every mode. "mode_press" runs the current mode's press action.
     "global": {
         "single": "mode_press",
@@ -38,6 +45,7 @@ DEFAULT = {
         {"name": "Volume", "enabled": True, "turn_up": "system_volume", "turn_down": "system_volume", "press": "play_pause"},
         {"name": "Slides", "enabled": True, "turn_up": "page_down", "turn_down": "page_up", "press": "key:b"},
         {"name": "Tabs", "enabled": True, "turn_up": "next_tab", "turn_down": "prev_tab", "press": "key:ctrl+w"},
+        APPS_MODE,
         {"name": "Arrows", "enabled": False, "turn_up": "arrow_right", "turn_down": "arrow_left", "press": "key:space"},
         {"name": "Zoom", "enabled": False, "turn_up": "zoom_in", "turn_down": "zoom_out", "press": "key:ctrl+0"},
         {"name": "Undo / Redo", "enabled": False, "turn_up": "redo", "turn_down": "undo", "press": "none"},
@@ -62,12 +70,17 @@ def load():
             data = json.load(f)
     except (OSError, ValueError):
         data = {}
-    old_version = data.get("config_version", 1) if data else 2
+    old_version = data.get("config_version", 1) if data else DEFAULT["config_version"]
     cfg = _merge(DEFAULT, data)
-    if old_version < 2:
-        # 2.1 adds the wheel menu: double press opens it
-        cfg["global"]["double"] = "open_menu"
-        cfg["config_version"] = 2
+    if old_version < DEFAULT["config_version"]:
+        if old_version < 2:
+            # 2.1 adds the wheel menu: double press opens it
+            cfg["global"]["double"] = "open_menu"
+        if old_version < 3 and data.get("modes") and not any(m.get("kind") == "apps" for m in cfg["modes"]):
+            # 2.2 adds the Apps mode, placed after Tabs
+            pos = next((i + 1 for i, m in enumerate(cfg["modes"]) if m.get("name") == "Tabs"), len(cfg["modes"]))
+            cfg["modes"].insert(pos, copy.deepcopy(APPS_MODE))
+        cfg["config_version"] = DEFAULT["config_version"]
         try:
             save(cfg)
         except OSError:

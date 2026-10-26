@@ -37,6 +37,10 @@ Reboot once after the first install so the permissions take effect. CMF Dial the
 
 Double press and a wheel of your modes appears in the middle of the screen. Turn the dial to move the highlight, and single press to pick it. Double or triple press closes the wheel without changing anything. If you leave it, it picks the highlighted mode after 5 seconds (you can change this). Each mode's icon can be changed in the app.
 
+### Apps mode
+
+Pick **Apps** on the wheel and a fanned list of your dock apps swings out beside it. Turn the dial to move through them and single press to open the highlighted one. Apps pinned in the Ubuntu dock open with Super+1 to 9, so an app that's already running comes to the front instead of opening twice. Double press closes the list. You can list your own apps (desktop file names, such as `firefox_firefox.desktop`) in the Modes tab instead of using the dock.
+
 You can change all of this in the app: turn modes on or off, rename them, reorder them, add your own, and set any action, including a custom shortcut (`ctrl+shift+t`, `super+d`) or a command (`gnome-calculator`).
 
 ## Troubleshooting

@@ -22,6 +22,7 @@ ICONS = [
     ("Windows", "focus-windows-symbolic"), ("Camera", "camera-photo-symbolic"),
     ("Screen", "video-display-symbolic"), ("Keyboard", "input-keyboard-symbolic"),
     ("Terminal", "utilities-terminal-symbolic"), ("Star", "starred-symbolic"),
+    ("Apps", "view-app-grid-symbolic"),
 ]
 TURN_ACTIONS = [k for k in actions.ACTIONS]
 PRESS_ACTIONS = list(actions.GLOBAL_ACTIONS) + [k for k in actions.ACTIONS if k != "system_volume"]
@@ -222,9 +223,10 @@ class Window(Adw.ApplicationWindow):
         return page
 
     def mode_row(self, i, m):
-        row = Adw.ExpanderRow(title=m.get("name", f"Mode {i + 1}"),
-                              subtitle=f"{actions.label(m.get('turn_down', 'none'))} / "
-                                       f"{actions.label(m.get('turn_up', 'none'))}")
+        is_apps = m.get("kind") == "apps"
+        sub = ("Turn to pick an app, press to open it" if is_apps else
+               f"{actions.label(m.get('turn_down', 'none'))} / {actions.label(m.get('turn_up', 'none'))}")
+        row = Adw.ExpanderRow(title=m.get("name", f"Mode {i + 1}"), subtitle=sub)
         sw = Gtk.Switch(active=m.get("enabled", True), valign=Gtk.Align.CENTER)
         sw.connect("notify::active", lambda s, *_: self.set_mode(i, "enabled", s.get_active()))
         row.add_suffix(sw)
@@ -241,9 +243,25 @@ class Window(Adw.ApplicationWindow):
         icon.set_selected(next((k for k, (_, n) in enumerate(ICONS) if n == cur), 0))
         icon.connect("notify::selected", lambda r, *_: self.set_mode(i, "icon", ICONS[r.get_selected()][1]))
         row.add_row(icon)
-        for key, title, choices in (("turn_up", "Turn clockwise", TURN_ACTIONS),
+        if is_apps:
+            apps = Adw.EntryRow(title="Apps (empty = apps pinned in the dock)")
+            apps.set_text(", ".join(self.cfg.get("apps") or []))
+            apps.set_show_apply_button(True)
+            apps.connect("apply", lambda r: self.set(
+                "apps", [a.strip() for a in r.get_text().split(",") if a.strip()]))
+            row.add_row(apps)
+            keys = Adw.SwitchRow(title="Open dock apps with Super+1-9",
+                                 subtitle="Switches to the app if it's already open")
+            keys.set_active(self.cfg.get("apps_dock_keys", True))
+            keys.connect("notify::active", lambda r, *_: self.set("apps_dock_keys", r.get_active()))
+            row.add_row(keys)
+            auto = Adw.SwitchRow(title="Open the highlighted app when the list times out")
+            auto.set_active(self.cfg.get("apps_autopick", False))
+            auto.connect("notify::active", lambda r, *_: self.set("apps_autopick", r.get_active()))
+            row.add_row(auto)
+        for key, title, choices in (() if is_apps else (("turn_up", "Turn clockwise", TURN_ACTIONS),
                                     ("turn_down", "Turn anticlockwise", TURN_ACTIONS),
-                                    ("press", "Press (single press)", MODE_PRESS_ACTIONS)):
+                                    ("press", "Press (single press)", MODE_PRESS_ACTIONS))):
             pick = ActionPicker(title, choices, m.get(key, "none"), None)
             pick.on_change = (lambda p=pick, k=key: self.set_mode(i, k, p.value()))
             for r in pick.rows():
@@ -366,9 +384,10 @@ class Window(Adw.ApplicationWindow):
         except OSError as ex:
             self.toast.add_toast(Adw.Toast(title=f"Could not show the wheel: {ex}"))
             return
-        modes = [{"name": m.get("name", ""), "icon": m.get("icon")}
+        modes = [{"name": m.get("name", ""), "icon": m.get("icon"), "kind": m.get("kind")}
                  for m in self.cfg["modes"] if m.get("enabled", True)]
-        p.stdin.write(json.dumps({"cmd": "show", "modes": modes, "sel": 0}) + "\n")
+        p.stdin.write(json.dumps({"cmd": "show", "modes": modes, "sel": 0,
+                                  "hint": "turn to choose \u00b7 press to select"}) + "\n")
         p.stdin.flush()
 
         def stop():
